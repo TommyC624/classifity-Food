@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#203c67">
+  <title>CLIP智能食物辨識</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", sans-serif;
+      color: #172d4c;
+      background: #f3f6fb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 8% 5%, #dceaff 0, transparent 31%),
+        radial-gradient(circle at 92% 12%, #e2f6dc 0, transparent 28%),
+        #f5f8fc;
+    }
+    .page {
+      width: min(780px, calc(100% - 28px));
+      margin: auto;
+      padding: 34px 0 max(32px, env(safe-area-inset-bottom));
+    }
+    header { text-align: center; margin-bottom: 20px; }
+    .tag {
+      display: inline-block;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: #dfeaff;
+      color: #315b99;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .1em;
+    }
+    h1 { margin: 13px 0 6px; font-size: clamp(34px, 8vw, 56px); }
+    header p { margin: 0 auto; max-width: 630px; color: #65758a; }
+    .card {
+      margin-top: 17px;
+      padding: 18px;
+      border: 1px solid #dce5f2;
+      border-radius: 23px;
+      background: rgba(255,255,255,.95);
+      box-shadow: 0 16px 48px rgba(28,53,88,.1);
+    }
+    .camera {
+      display: grid;
+      place-items: center;
+      min-height: 280px;
+      overflow: hidden;
+      border: 2px dashed #9eb5d4;
+      border-radius: 17px;
+      background: #f8faff;
+      cursor: pointer;
+      text-align: center;
+    }
+    .camera-icon { display: block; margin-bottom: 8px; font-size: 43px; }
+    .camera strong, .camera small { display: block; }
+    .camera strong { font-size: 20px; }
+    .camera small { margin-top: 8px; color: #748196; }
+    #preview { width: 100%; height: 340px; object-fit: contain; }
+    input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .built-in-list { padding: 14px; border-radius: 14px; background: #edf3ff; color: #315379; }
+    .built-in-list strong { display: block; margin-bottom: 5px; }
+    .built-in-list p { margin: 0; font-size: 13px; line-height: 1.55; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    button {
+      padding: 15px;
+      border: 0;
+      border-radius: 14px;
+      color: white;
+      background: #315f9e;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button.secondary { background: #e8eef7; color: #315379; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .status { margin-top: 13px; padding: 13px; border-radius: 12px; font-size: 14px; }
+    .status.info { background: #edf3ff; color: #315379; }
+    .status.loading { background: #fff4d6; color: #755615; }
+    .status.success { background: #e8f6e7; color: #236039; }
+    .status.error { background: #ffebe8; color: #8a3029; }
+    progress { width: 100%; height: 10px; margin-top: 9px; accent-color: #3e6fab; }
+    .caption { margin: 0; color: #6d7d90; font-size: 13px; font-weight: 800; letter-spacing: .08em; }
+    h2 { margin: 6px 0 22px; font-size: 38px; }
+    .category-path { margin: -13px 0 22px; color: #64758a; font-size: 14px; }
+    .prediction { margin: 16px 0; padding: 15px; border: 1px solid #dce5f2; border-radius: 15px; }
+    .prediction.confirmed { border-color: #5ca36b; background: #edf8ef; }
+    .prediction-row { display: flex; justify-content: space-between; gap: 16px; }
+    .prediction-path { margin: 7px 0 0; color: #64758a; font-size: 13px; }
+    .meter { height: 9px; margin-top: 7px; overflow: hidden; border-radius: 99px; background: #e6edf6; }
+    .meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4e7dbc, #61a95e); }
+    .confirm-choice { width: 100%; margin-top: 13px; padding: 12px; background: #376cab; }
+    .confirm-choice.selected { background: #39804b; }
+    .warning { margin: 22px 0 0; color: #7a6851; font-size: 13px; }
+    footer { padding: 23px 8px 0; text-align: center; color: #718094; font-size: 12px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 560px) {
+      .page { padding-top: 26px; }
+      .card { padding: 14px; border-radius: 19px; }
+      .camera { min-height: 250px; }
+      #preview { height: 295px; }
+      .actions { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <span class="tag">CLIP ViT-B/32</span>
+      <h1>零樣本食物辨識</h1>
+      <p>不用訓練模型。系統會使用內置食品清單，自動找出照片最接近的食物。</p>
+    </header>
+
+    <section class="card">
+      <label class="camera" for="photo">
+        <div id="empty-preview">
+          <span class="camera-icon">📷</span>
+          <strong>拍攝或選擇照片</strong>
+          <small>每次最好只放一種主要食物</small>
+        </div>
+        <img id="preview" alt="食物照片預覽" hidden>
+      </label>
+      <input id="photo" type="file" accept="image/*" capture="environment">
+    </section>
+
+    <section class="card">
+      <div class="built-in-list">
+        <strong>已內置你的最終食物清單</strong>
+        <p>包括最新版Word內全部156項資料。辨認時會直接比較155個可從外觀辨認的食品，再顯示三個中文候選結果供你確認；隔夜餸則應按存放時間判斷。</p>
+      </div>
+
+      <div class="actions">
+        <button id="load-button" class="secondary" type="button">1. 載入CLIP模型</button>
+        <button id="classify-button" type="button" disabled>2. 開始辨認</button>
+      </div>
+
+      <div id="status" class="status info">先選擇照片，再按「載入CLIP模型」。</div>
+      <progress id="progress" max="100" value="0" hidden></progress>
+    </section>
+
+    <section id="results" class="card" hidden>
+      <p class="caption">請確認辨認結果</p>
+      <h2 id="main-result"></h2>
+      <p id="category-path" class="category-path"></p>
+      <div id="prediction-list"></div>
+      <p class="warning">分數只表示候選類別之間的相對相似度，不代表食物安全或新鮮程度。</p>
+    </section>
+
+    <footer>Transformers.js · Xenova/clip-vit-base-patch32</footer>
+  </main>
+
+  <script type="module">
+    import {
+      env,
+      pipeline
+    } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+
+    const MODEL_ID = "Xenova/clip-vit-base-patch32";
+
+    function makeGroup(prompt, zh, rows) {
+      return {
+        prompt,
+        zh,
+        items: rows.trim().split("\n").map((row) => {
+          const [en, chinese] = row.split("|");
+          return { en: en.trim(), zh: chinese.trim() };
+        })
+      };
+    }
+
+    // English prompts are used internally by CLIP. Only Chinese names are
+    // rendered on the phone screen.
+    const UNPROCESSED_GROUPS = [
+      makeGroup("fresh fruit", "水果", `
+fresh apple|蘋果
+fresh banana|香蕉
+fresh orange|橙
+fresh pear|梨
+fresh grapes|提子
+fresh strawberry|士多啤梨
+fresh blueberry|藍莓
+fresh raspberry|紅莓
+fresh watermelon|西瓜
+fresh melon|蜜瓜
+fresh pineapple|菠蘿
+fresh mango|芒果
+fresh lemon|檸檬
+fresh lime|青檸
+fresh peach|桃
+fresh plum|李子
+fresh cherry|車厘子
+fresh kiwi fruit|奇異果
+fresh papaya|木瓜
+fresh avocado|牛油果
+fresh coconut|椰子
+fresh dragon fruit|火龍果`),
+
+      makeGroup("fresh vegetables", "蔬菜", `
+fresh carrot|甘筍
+fresh tomato|番茄
+fresh potato|薯仔
+fresh sweet potato|番薯
+fresh cucumber|青瓜
+fresh broccoli|西蘭花
+fresh cauliflower|椰菜花
+fresh cabbage|椰菜
+fresh Chinese cabbage|黃芽白
+fresh onion|洋蔥
+fresh red onion|紅洋蔥
+fresh garlic|蒜頭
+fresh ginger|薑
+fresh bell pepper|甜椒
+fresh chili pepper|辣椒
+fresh lettuce|生菜
+fresh spinach|菠菜
+fresh water spinach|通菜
+fresh bok choy|白菜
+fresh kale|羽衣甘藍
+fresh celery|西芹
+fresh asparagus|蘆筍
+fresh eggplant|茄子
+fresh zucchini|翠玉瓜
+fresh pumpkin|南瓜
+fresh corn|粟米
+fresh mushroom|蘑菇
+fresh green beans|四季豆
+fresh peas|青豆
+fresh lotus root|蓮藕
+fresh radish|白蘿蔔
+fresh beetroot|紅菜頭`),
+
+      makeGroup("raw meat", "生肉類", `
+raw chicken breast|生雞胸肉
+raw chicken thigh|生雞髀肉
+raw chicken wing|生雞翼
+whole raw chicken|原隻生雞
+raw pork|生豬肉
+raw pork chop|生豬扒
+raw pork belly|生豬腩肉
+raw pork ribs|生豬肋骨
+raw beef|生牛肉
+raw beef steak|生牛扒
+raw ground beef|生免治牛肉
+raw lamb|生羊肉
+raw lamb chop|生羊扒
+raw duck meat|生鴨肉
+whole raw duck|原隻生鴨`),
+
+      makeGroup("raw seafood", "生海鮮", `
+whole raw fish|原條生魚
+raw fish fillet|生魚柳
+raw salmon|生三文魚
+raw tuna|生吞拿魚
+raw shrimp|生蝦
+raw crab|生蟹
+raw lobster|生龍蝦
+raw squid|生魷魚
+raw octopus|生八爪魚
+raw scallops|生帶子
+raw mussels|生青口
+raw clams|生蜆
+raw oysters|生蠔`),
+
+      makeGroup("fresh eggs and dairy food", "蛋類及奶類", `
+raw chicken egg|生雞蛋
+raw duck egg|生鴨蛋
+fresh milk|鮮奶
+plain yogurt|原味乳酪
+fresh cheese|芝士`),
+
+      makeGroup("fresh beans and tofu", "豆類及豆製品", `
+fresh green peas|新鮮青豆
+fresh edamame|毛豆
+raw tofu|豆腐`)
+    ];
+
+    const PROCESSED_GROUPS = [
+      makeGroup("processed fruit products", "水果製品", `
+canned pineapple|菠蘿罐頭
+canned peach slices|桃片罐頭
+canned fruit cocktail|雜果罐頭
+fruit jam|果醬`),
+
+      makeGroup("processed canned or pickled vegetables", "蔬菜及醃製食品", `
+canned sweet corn|粟米罐頭
+canned green peas|青豆罐頭
+canned tomatoes|番茄罐頭
+canned mushrooms|蘑菇罐頭
+pickled cucumber|醃青瓜
+pickled radish|醃蘿蔔
+kimchi|泡菜
+sauerkraut|酸椰菜
+frozen mixed vegetables|急凍雜菜
+tomato paste|番茄膏`),
+
+      makeGroup("processed meat products", "肉類製品", `
+sausage|香腸
+hot dog sausage|熱狗腸
+bacon|煙肉
+ham|火腿
+luncheon meat|午餐肉
+salami|沙樂美腸
+chicken nuggets|雞塊
+meatballs|肉丸
+beef burger patty|牛肉漢堡扒
+canned meat|肉類罐頭
+breaded chicken cutlet|裹粉雞扒
+Chinese cured sausage|臘腸`),
+
+      makeGroup("processed seafood products", "海鮮製品", `
+canned tuna|吞拿魚罐頭
+canned sardines|沙甸魚罐頭
+smoked salmon|煙三文魚
+fish balls|魚蛋
+fish cake|魚餅
+crab sticks|蟹柳
+breaded fish fillet|裹粉魚柳
+dried squid|魷魚乾
+shrimp paste|蝦醬`),
+
+      makeGroup("processed dairy and soy products", "奶類及豆製品", `
+pasteurized milk|巴士德消毒鮮奶
+flavored milk|調味奶
+plain yogurt|原味乳酪
+fruit yogurt|水果乳酪
+cheese|芝士
+processed cheese slices|加工芝士片
+butter|牛油
+ice cream|雪糕
+soy milk|豆漿
+tofu|豆腐`),
+
+      makeGroup("grain bread and breakfast food", "穀物、麵包及早餐食品", `
+cake|蛋糕`),
+
+      makeGroup("snacks and desserts", "零食及甜品", `
+jelly dessert|啫喱
+packaged pudding|杯裝布甸
+ice pop|冰條`),
+
+      makeGroup("ready-to-eat and frozen food", "即食及冷凍食品", `
+frozen pizza|急凍薄餅
+frozen dumplings|急凍餃子
+frozen French fries|急凍薯條
+frozen fish fingers|急凍魚手指
+frozen fried rice|急凍炒飯
+microwave ready meal|微波即食餐
+ready-made sandwich|即食三文治
+packaged ready-to-eat chicken breast|即食雞胸`),
+
+      makeGroup("sauces and drinks", "醬料及飲品", `
+ketchup|茄汁
+mayonnaise|蛋黃醬
+soy sauce|豉油
+oyster sauce|蠔油
+chili sauce|辣椒醬
+salad dressing|沙律醬
+peanut butter|花生醬
+curry sauce|咖喱醬`)
+    ];
+
+    const ALL_FOODS = [
+      ...UNPROCESSED_GROUPS.flatMap((group) =>
+        group.items.map((item) => ({
+          ...item,
+          clipLabel: `${item.en}, ${group.prompt}`,
+          path: `未加工食品 › ${group.zh}`
+        }))
+      ),
+      ...PROCESSED_GROUPS.flatMap((group) =>
+        group.items.map((item) => ({
+          ...item,
+          clipLabel: `${item.en}, ${group.prompt}`,
+          path: `已加工食品 › ${group.zh}`
+        }))
+      )
+    ];
+
+    // Browser cache stores model files after the first download.
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+
+    const fileInput = document.querySelector("#photo");
+    const preview = document.querySelector("#preview");
+    const emptyPreview = document.querySelector("#empty-preview");
+    const loadButton = document.querySelector("#load-button");
+    const classifyButton = document.querySelector("#classify-button");
+    const statusBox = document.querySelector("#status");
+    const progressBar = document.querySelector("#progress");
+    const resultsBox = document.querySelector("#results");
+    const mainResult = document.querySelector("#main-result");
+    const categoryPath = document.querySelector("#category-path");
+    const predictionList = document.querySelector("#prediction-list");
+
+    let classifier = null;
+    let imageUrl = null;
+    let imageReady = false;
+
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl = URL.createObjectURL(file);
+      imageReady = false;
+      resultsBox.hidden = true;
+      preview.src = imageUrl;
+
+      preview.onload = () => {
+        imageReady = true;
+        preview.hidden = false;
+        emptyPreview.hidden = true;
+        updateButtons();
+        setStatus(
+          classifier ? "照片已準備好，可以開始辨認。" : "照片已準備好，請載入CLIP模型。",
+          "info"
+        );
+      };
+    });
+
+    loadButton.addEventListener("click", loadModel);
+    classifyButton.addEventListener("click", classifyImage);
+
+    async function loadModel() {
+      if (classifier) return;
+
+      loadButton.disabled = true;
+      progressBar.hidden = false;
+      setStatus("正在下載及載入CLIP模型。第一次可能需要數分鐘……", "loading");
+
+      try {
+        classifier = await pipeline(
+          "zero-shot-image-classification",
+          MODEL_ID,
+          {
+            dtype: "q8",
+            device: "wasm",
+            progress_callback: updateProgress
+          }
+        );
+
+        progressBar.value = 100;
+        loadButton.textContent = "CLIP模型已載入";
+        setStatus("模型已準備好。現在可以辨認照片。", "success");
+      } catch (error) {
+        console.error(error);
+        classifier = null;
+        loadButton.disabled = false;
+        setStatus(`模型載入失敗：${error.message}`, "error");
+      }
+
+      updateButtons();
+    }
+
+    function updateProgress(data) {
+      if (typeof data.progress === "number") {
+        progressBar.value = Math.max(progressBar.value, data.progress);
+        setStatus(`正在載入CLIP模型：${Math.round(data.progress)}%`, "loading");
+      } else if (data.status === "ready") {
+        progressBar.value = 100;
+      }
+    }
+
+    async function classifyImage() {
+      if (!classifier) {
+        setStatus("請先載入CLIP模型。", "error");
+        return;
+      }
+      if (!imageReady || !imageUrl) {
+        setStatus("請先拍攝或選擇照片。", "error");
+        return;
+      }
+      classifyButton.disabled = true;
+      classifyButton.textContent = "辨認中……";
+      resultsBox.hidden = true;
+      setStatus("正在直接比較155個食品，請稍候……", "loading");
+
+      try {
+        const output = await runClip(ALL_FOODS.map((food) => food.clipLabel));
+        const foodMap = new Map(
+          ALL_FOODS.map((food) => [normalise(food.clipLabel), food])
+        );
+        const chinesePredictions = output.slice(0, 3).map((prediction) => {
+          const food = foodMap.get(normalise(prediction.label));
+          if (!food) throw new Error("無法配對食品名稱");
+          return { zh: food.zh, path: food.path, score: prediction.score };
+        });
+
+        showResults(chinesePredictions);
+        setStatus("辨認完成。請按下其中一個確認按鈕。", "info");
+      } catch (error) {
+        console.error(error);
+        setStatus(`辨認失敗：${error.message}`, "error");
+      } finally {
+        updateButtons();
+      }
+    }
+
+    async function runClip(labels) {
+      return classifier(imageUrl, labels, {
+        hypothesis_template: "a close-up photo of {}"
+      });
+    }
+
+    function normalise(value) {
+      return String(value).trim().toLowerCase();
+    }
+
+    function showResults(predictions) {
+      if (!predictions.length) throw new Error("模型沒有傳回結果");
+
+      mainResult.textContent = "請選擇正確食物";
+      categoryPath.textContent = "AI建議以下三項，請按下最接近照片的選項。";
+      predictionList.innerHTML = "";
+
+      predictions.forEach((prediction, index) => {
+        const percentage = Number(prediction.score) * 100;
+        const item = document.createElement("div");
+        item.className = "prediction";
+
+        const row = document.createElement("div");
+        row.className = "prediction-row";
+        const label = document.createElement("span");
+        label.textContent = `${index + 1}. ${prediction.zh}`;
+        const score = document.createElement("strong");
+        score.textContent = `${percentage.toFixed(1)}%`;
+
+        const meter = document.createElement("div");
+        meter.className = "meter";
+        const fill = document.createElement("span");
+        fill.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
+
+        const path = document.createElement("p");
+        path.className = "prediction-path";
+        path.textContent = prediction.path;
+
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.className = "confirm-choice";
+        confirmButton.textContent = `確認是「${prediction.zh}」`;
+        confirmButton.addEventListener("click", () => {
+          confirmPrediction(prediction, item, confirmButton);
+        });
+
+        row.append(label, score);
+        meter.append(fill);
+        item.append(row, meter, path, confirmButton);
+        predictionList.append(item);
+      });
+
+      resultsBox.hidden = false;
+      resultsBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function confirmPrediction(prediction, selectedItem, selectedButton) {
+      predictionList.querySelectorAll(".prediction").forEach((item) => {
+        item.classList.remove("confirmed");
+      });
+      predictionList.querySelectorAll(".confirm-choice").forEach((button) => {
+        button.classList.remove("selected");
+        button.textContent = button.dataset.originalText || button.textContent;
+        button.disabled = false;
+      });
+
+      predictionList.querySelectorAll(".confirm-choice").forEach((button) => {
+        if (!button.dataset.originalText) button.dataset.originalText = button.textContent;
+      });
+
+      selectedItem.classList.add("confirmed");
+      selectedButton.classList.add("selected");
+      selectedButton.textContent = "✓ 已確認這項食品";
+      selectedButton.disabled = true;
+      mainResult.textContent = prediction.zh;
+      categoryPath.textContent = prediction.path;
+
+      try {
+        localStorage.setItem("confirmedFood", JSON.stringify({
+          name: prediction.zh,
+          category: prediction.path,
+          confirmedAt: new Date().toISOString()
+        }));
+      } catch (error) {
+        // Private browsing may block storage; confirmation should still work.
+        console.warn("無法儲存確認結果", error);
+      }
+
+      setStatus(`已確認食品：${prediction.zh}`, "success");
+    }
+
+    function updateButtons() {
+      loadButton.disabled = Boolean(classifier);
+      classifyButton.disabled = !(classifier && imageReady);
+      classifyButton.textContent = classifier && imageReady ? "2. 開始辨認" : "2. 開始辨認";
+    }
+
+    function setStatus(message, type) {
+      statusBox.textContent = message;
+      statusBox.className = `status ${type}`;
+    }
+  </script>
+</body>
+</html>
